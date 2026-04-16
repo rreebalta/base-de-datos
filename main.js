@@ -1,7 +1,7 @@
 // main.js - Router principal (versión corregida y compatible con tu show.js)
 
 import { DATA, renderFeed, renderGrid, renderEpisodio, renderSerie, renderCategoryPills } from './show.js';
-import { getEpisodioByDetailUrl, getSerieByUrl } from 'https://podcast.tenam.site/episodios.js';
+import { getEpisodioByDetailUrl, getSerieByUrl } from '/api/episodios.js';
 import './player.js';
 
 function updateCanonicalAndAlternate() {
