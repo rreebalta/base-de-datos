@@ -136,8 +136,7 @@ const episodiosBase = [
         author: "Lemus",
         description: "Continuación de las corrientes de la teoría del delito. Teoría causalista, finalista y funcionalista.",
         allowDownload: false,
-        seriesid: "ddpp-3-clases",
-        bgColor: '#46210a'
+        seriesid: "ddpp-3-clases"
     },
     {
         id: "teoria-causalista",
@@ -148,8 +147,7 @@ const episodiosBase = [
         author: "Lemus",
         description: "Desarrollo de la teoría causalista. Derecho Penal 3. Historia, Ciencia.",
         allowDownload: false,
-        seriesid: "ddpp-3-clases",
-        bgColor: '#46210a'
+        seriesid: "ddpp-3-clases"
     },
     {
         id: "que-es-derecho-penal",
@@ -160,8 +158,7 @@ const episodiosBase = [
         author: "Lemus",
         description: "Conjunto de normas jurídicas de naturaleza pública que regulan los delitos, las penas y las medidas de seguridad. Ciencia pública. Derecho, Historia.",
         allowDownload: false,
-        seriesid: "ddpp-3-clases",
-        bgColor: '#46210a'
+        seriesid: "ddpp-3-clases"
     },
     {
         id: "tipicidad-elementos-delito",
@@ -172,8 +169,7 @@ const episodiosBase = [
         author: "Lemus",
         description: "Análisis profundo del concepto de tipicidad en derecho y sociedad. Una mirada crítica y actual. Ciencia.",
         allowDownload: false,
-        seriesid: "ddpp-3-clases",
-        bgColor: '#46210a'
+        seriesid: "ddpp-3-clases"
     },
     {
         id: "crisis-estado-derecho",
@@ -185,7 +181,7 @@ const episodiosBase = [
         description: "La crisis del Estado de Derecho. Por Lic. Raymundo Catz. El estado de derecho en crisis por los derechos de segunda y tercera generación.",
         allowDownload: false,
         seriesid: "dp-indigenas",
-        bgColor: '#d92c5e'
+        bgColor: '#cc04ab'
     },
     {
         id: "conceptos-basicos-ddhh",
@@ -197,7 +193,7 @@ const episodiosBase = [
         description: "Conceptos básicos de los Derechos Humanos",
         allowDownload: false,
         seriesid: "dp-indigenas",
-        bgColor: '#d92c5e'
+        bgColor: '#cc04ab'
     },
     {
         id: "racismo-despojo",
@@ -210,33 +206,7 @@ const episodiosBase = [
         allowDownload: false,
         seriesid: "dp-indigenas",
         detailUrl: '/dp-indigenas/despojo-y-racismo',
-        bgColor: '#d92c5e'
-    },
-    {
-        id: "discriminación-dpi",
-        date: '2026-03-23',
-        mediaUrl: "https://d3ctxlq1ktw2nl.cloudfront.net/staging/2026-2-25/420764379-44100-2-c9bbf0731568.m4a",
-        coverUrl: 'https://balta-media.odoo.com/web/image/927-edc793ab/Pueblos%20ind%C3%ADgenas.png',
-        title: "La discriminación sistemática",
-        author: "Raymundo",
-        description: "Derechos Humanos.",
-        allowDownload: false,
-        seriesid: "dp-indigenas",
-        detailUrl: '/dp-indigenas/discriminacion-sistematica',
-        bgColor: '#d92c5e'
-    },
-    {
-        id: "discriminacion-penal",
-        date: '2026-03-25',
-        mediaUrl: "https://d3ctxlq1ktw2nl.cloudfront.net/staging/2026-2-30/421043870-44100-2-1c722ae07d78b.m4a",
-        coverUrl: 'https://balta-media.odoo.com/web/image/927-edc793ab/Pueblos%20ind%C3%ADgenas.png',
-        title: "La discriminación en el código penal",
-        author: "Raymundo",
-        description: "Legislación penal sobre la discriminación. Derechos Humanos. Tarea.",
-        allowDownload: false,
-        seriesid: "dp-indigenas",
-        detailUrl: '/dp-indigenas/discriminacion-penal',
-        bgColor: '#d92c5e'
+        bgColor: '#cc04ab'
     },
     {
         id: "antecedentes-derecho-trabajo",
@@ -247,8 +217,7 @@ const episodiosBase = [
         description: 'Antecedentes históricos del derecho de trabajo. Avidan Ortiz. Historia del derecho Laboral.',
         allowDownload: false,
         author: "Avidan Ortiz",
-        seriesid: "derecho-laboral-1",
-        bgColor: '#84279c'
+        seriesid: "derecho-laboral-1"
     },
     {
         id: "derechos-sociales-minimos",
@@ -260,8 +229,7 @@ const episodiosBase = [
         allowDownload: false,
         author: "Avidan Ortiz",
         seriesid: "derecho-laboral-1",
-        detailUrl: '/derecho-laboral-1/ds-minimos',
-        bgColor: '#84279c'
+        detailUrl: '/derecho-laboral-1/ds-minimos'
     },
     {
         id: "fundamento-constitucional-laboral",
@@ -273,8 +241,7 @@ const episodiosBase = [
         allowDownload: false,
         author: "Avidan Ortiz",
         seriesid: "derecho-laboral-1",
-        detailUrl: '/derecho-laboral-1/constitucional',
-        bgColor: '#84279c'
+        detailUrl: '/derecho-laboral-1/constitucional'
     },
     {
         id: "fuentes-derecho-trabajo",
@@ -285,8 +252,7 @@ const episodiosBase = [
         description: 'Historia. Fuentes del Derecho de trabajo. Ciencia.',
         allowDownload: false,
         author: "Avidan Ortiz",
-        seriesid: "derecho-laboral-1",
-        bgColor: '#84279c'
+        seriesid: "derecho-laboral-1"
     },
     {
         id: "veliz-franco-vs-guatemala",
@@ -298,8 +264,7 @@ const episodiosBase = [
         allowDownload: true,
         author: "Melany y Laura",
         seriesid: "ddhh",
-        detailUrl: '/dh/caso-veliz-franco-vs-guatemala',
-        bgColor: '#84279c'
+        detailUrl: '/dh/caso-veliz-franco-vs-guatemala'
     },
     {
         id: "analisis-art-321-c-penal",
@@ -310,8 +275,7 @@ const episodiosBase = [
         author: "Lemus",
         description: "Análisis de los artículos 321 y 322. Falsedad material y falsedad idieolígica. Derecho Penal Guatemalteco. Delitos. Criminal. Derehcos Humanos. Ciencia. Investigación.",
         allowDownload: false,
-        seriesid: "ddpp-3-clases",
-        bgColor: '#46210a'
+        seriesid: "ddpp-3-clases"
     },
     {
         id: "analisis-art-323-326-c-penal",
@@ -323,23 +287,19 @@ const episodiosBase = [
         description: "Análisis de los artículos 321 y 322. Falsedad material y falsedad idieolígica. Derecho Penal Guatemalteco. Delitos. Criminal. Derehcos Humanos. Ciencia. Investigación.",
         allowDownload: true,
         seriesid: "ddpp-3-clases",
-        detailUrl: '/ddpp-3-clases/323-326',
-        bgColor: '#46210a'
+        detailUrl: '/ddpp-3-clases/323-326'
     },
     {
         id: "derecho-de-obligaciones",
         date: '2026-01-28',
         mediaUrl: "https://d3ctxlq1ktw2nl.cloudfront.net/staging/2026-2-6/419435680-44100-2-430de7e946de8.m4a",
-        mediaVideo: "https://lb.s3.odysee.tv/vods2.odysee.live/odysee-replays/dd57d90536480f9a751ba4429447fd5f613efce3/1770236623.mp4",
         coverUrl: 'https://balta-media.odoo.com/web/image/1036-2f9d7316/civil%20iii.webp',
         title: "Derecho de obligaciones (Clase 1)",
         author: "Héctor Ortíz",
         description: "Conferencia. Derecho de Obligaciones. Contrato.",
         allowDownload: false,
         seriesid: "derecho-civil-3",
-        detailUrl: '/derecho-civil-3/clase-1',
-        bgColor: '#7c3aed',
-        subtitlesUrl: '/text/civil3/clase1.vtt'
+        detailUrl: '/derecho-civil-3/clase-1'
     },
     {
         id: "fuentes-de-las-obligaciones",
