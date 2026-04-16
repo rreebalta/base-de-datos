@@ -1,5 +1,5 @@
 // buscar.js - Página de búsqueda profesional con vistas integradas
-import { getEpisodiosConSerie, series } from './api/episodios.js';
+import { getEpisodiosConSerie, series } from '@/lib/episodios';
 import { createGridCard } from './show.js';
 
 // ---------- CONSTANTES ----------
