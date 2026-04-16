@@ -1,5 +1,5 @@
 // explorar.js - Página de exploración con diseño profesional
-import { getEpisodiosConSerie, getAllEpisodios, series } from '@/lib/episodios';
+import { getEpisodiosConSerie, getAllEpisodios, series } from './episodios.js';
 
 // ---------- CONSTANTES ----------
 const ICONS = {
