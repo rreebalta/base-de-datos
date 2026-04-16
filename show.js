@@ -1,5 +1,5 @@
 // show.js - Vistas del feed, episodio, serie, etc. - VERSIÓN DEFINITIVA 2026 MODERNIZADA
-import { getAllEpisodios, getSerieById, getEpisodiosBySerieId, getEpisodiosConSerie } from './episodios';
+import { getAllEpisodios, getSerieById, getEpisodiosBySerieId, getEpisodiosConSerie } from './episodios.js';
 import { userStorage } from './storage.js';
 import './player.js';
 
