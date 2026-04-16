@@ -1,5 +1,5 @@
 // show.js - Vistas del feed, episodio, serie, etc. - VERSIÓN CORREGIDA
-import { getAllEpisodios, getSerieById, getEpisodiosBySerieId, getEpisodiosConSerie } from 'https://podcast.tenam.site/episodios.js';
+import { getAllEpisodios, getSerieById, getEpisodiosBySerieId, getEpisodiosConSerie } from './episodios.js';
 import { userStorage } from './storage.js';
 import './player.js';
 
