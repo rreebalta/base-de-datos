@@ -1,7 +1,7 @@
 // main.js - Router principal (versión corregida y compatible con tu show.js)
 
 import { DATA, renderFeed, renderGrid, renderEpisodio, renderSerie, renderCategoryPills } from './show.js';
-import { getEpisodioByDetailUrl, getSerieByUrl } from './episodios';
+import { getEpisodioByDetailUrl, getSerieByUrl } from './episodios.js';
 import './player.js';
 
 function updateCanonicalAndAlternate() {
