@@ -1,6 +1,6 @@
 // 404.js
-función de exportación render(contenedor) {
-    contenedor.innerHTML = `
+export function render(container) {
+    container.innerHTML = `
         <div class="text-center py-20">
             <h1 class="text-6xl font-bold text-white mb-4">404</h1>
             <p class="text-xl text-gray-400 mb-8">Página no encontrada</p>
@@ -9,4 +9,4 @@ función de exportación render(contenedor) {
     `;
 }
 
-exportar const encabezado = verdadero;
+export const header = true;
