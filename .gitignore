@@ -1,2 +1,5 @@
-.env.local
-./episodios.js
+# Ignorar todos los archivos que empiecen con .env
+.env*
+
+# Ignorar la carpeta de dependencias (muy común)
+node_modules/
