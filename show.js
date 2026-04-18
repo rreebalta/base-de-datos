@@ -1,5 +1,5 @@
-// show.js - Vistas del feed, episodio, serie, etc. - VERSIÓN DEFINITIVA 2026 MODERNIZADA
-import { getAllEpisodios, getSerieById, getEpisodiosBySerieId, getEpisodiosConSerie } from './lib/episodios.js';
+// show.js - Vistas del feed, episodio, serie, etc. - VERSIÓN ASÍNCRONA PARA FIREBASE
+import { getAllEpisodios, getSerieById, getEpisodiosBySerieId, getEpisodiosConSerie, getEpisodioById } from './episodios.js';
 import { userStorage } from './storage.js';
 import './player.js';
 
@@ -22,44 +22,59 @@ const CATEGORIES = [
     "Tecnología e Informática", "Otras Ciencias"
 ];
 
-// ---------- ESTILOS GLOBALES (fondo degradado + azul marino elegante) ----------
+// ---------- ESTILOS GLOBALES ----------
 const GLOBAL_STYLES = `
     <style>
-        body {
-            background: linear-gradient(135deg, #1a2639 0%, #0f172a 50%, #1e293b 100%);
-            min-height: 100vh;
-        }
-        .bg-custom-dark {
-            background: linear-gradient(135deg, #1a2639 0%, #0f172a 50%, #1e293b 100%);
-        }
-        .card-std, .card-video, .grid-card, .list-item, .detail-view, .serie-header {
-            background: rgba(255, 255, 255, 0.03);
-            backdrop-filter: blur(2px);
-        }
-        .btn-primary {
-            background: #0369a1 !important;
-        }
-        .btn-primary:hover {
-            background: #075985 !important;
-        }
-        .carousel-double .flex-col {
-            gap: 0.75rem;
-        }
-        .carousel-double .card-std {
-            margin-bottom: 0;
-        }
-        .premium-overlay {
-            background: rgba(139, 92, 246, 0.3);
-        }
+        body { background: linear-gradient(135deg, #1a2639 0%, #0f172a 50%, #1e293b 100%); min-height: 100vh; }
+        .bg-custom-dark { background: linear-gradient(135deg, #1a2639 0%, #0f172a 50%, #1e293b 100%); }
+        .card-std, .card-video, .grid-card, .list-item, .detail-view, .serie-header { background: rgba(255, 255, 255, 0.03); backdrop-filter: blur(2px); }
+        .btn-primary { background: #0369a1 !important; }
+        .btn-primary:hover { background: #075985 !important; }
+        .carousel-double .flex-col { gap: 0.75rem; }
+        .carousel-double .card-std { margin-bottom: 0; }
+        .premium-overlay { background: rgba(139, 92, 246, 0.3); }
     </style>
 `;
-
-// Aplicar estilos globales
 if (!document.getElementById('global-styles')) {
     const styleSheet = document.createElement('style');
     styleSheet.id = 'global-styles';
     styleSheet.textContent = GLOBAL_STYLES.replace('<style>', '').replace('</style>', '');
     document.head.appendChild(styleSheet);
+}
+
+// ---------- CACHÉ DE DATOS ----------
+let cachedEpisodios = null;      // array de episodios con categorías y serie embebida
+let cachedSeriesMap = null;      // mapa de series por seriesid
+
+// Función para cargar datos una sola vez (se llama automáticamente al inicio)
+async function cargarDatos() {
+    if (cachedEpisodios !== null) return cachedEpisodios;
+    
+    // Obtener episodios con serie embebida (ya resuelve la relación)
+    const episodiosConSerie = await getEpisodiosConSerie();
+    
+    // Agregar categorías calculadas y formatear
+    cachedEpisodios = episodiosConSerie.map(ep => ({
+        ...ep,
+        categories: determineCategories(ep)
+    }));
+    
+    // Construir mapa de series para acceso rápido
+    const seriesSet = new Map();
+    for (const ep of cachedEpisodios) {
+        if (ep.series && !seriesSet.has(ep.series.seriesid)) {
+            seriesSet.set(ep.series.seriesid, ep.series);
+        }
+    }
+    cachedSeriesMap = seriesSet;
+    
+    return cachedEpisodios;
+}
+
+// Función auxiliar para obtener un episodio por ID desde caché o desde Firebase
+async function obtenerEpisodio(id) {
+    const episodios = await cargarDatos();
+    return episodios.find(ep => ep.id === id);
 }
 
 // ---------- UTILIDADES ----------
@@ -93,12 +108,7 @@ function determineCategories(ep) {
     return Array.from(cats);
 }
 
-export const DATA = getEpisodiosConSerie().map(ep => ({
-    ...ep,
-    categories: determineCategories(ep)
-}));
-
-// ---------- RENDERIZADO DE TARJETAS ----------
+// ---------- RENDERIZADO DE TARJETAS (igual que antes, solo reciben ep) ----------
 export function createStandardCard(ep) {
     const inPlaylist = userStorage.playlist.has(ep.id);
     const addIcon = inPlaylist ? ICONS.added : ICONS.add;
@@ -220,7 +230,7 @@ export function createGridCard(item) {
     `;
 }
 
-// ---------- CARRUSELES ----------
+// ---------- CARRUSELES (ahora asíncronos) ----------
 function createCarousel(title, type, items, categoryContext, viewAllType = 'category') {
     if (!items || items.length === 0) return '';
     const id = 'c-' + Math.random().toString(36).substr(2, 9);
@@ -280,10 +290,10 @@ function createCarousel(title, type, items, categoryContext, viewAllType = 'cate
     </section>`;
 }
 
-function createSeriesCarousel() {
-    const id = 'c-series-' + Math.random().toString(36).substr(2, 9);
+async function createSeriesCarousel() {
+    const episodios = await cargarDatos();
     const seriesGroups = {};
-    DATA.forEach(ep => {
+    episodios.forEach(ep => {
         if (ep.series) {
             const serieKey = ep.series.url_serie;
             if (!seriesGroups[serieKey]) {
@@ -301,6 +311,7 @@ function createSeriesCarousel() {
 
     if (seriesArray.length === 0) return '';
 
+    const id = 'c-series-' + Math.random().toString(36).substr(2, 9);
     let content = `<div id="${id}" class="flex gap-4 sm:gap-8 overflow-x-auto no-scrollbar scroll-smooth pb-4">`;
     seriesArray.forEach(group => {
         group.episodes.sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -337,25 +348,25 @@ function createSeriesCarousel() {
     </section>`;
 }
 
-// ---------- CARRUSEL DE RECOMENDADOS ----------
-function createRecommendedCarousel(currentEp) {
+async function createRecommendedCarousel(currentEp) {
     if (!currentEp) return '';
-    const similar = DATA
+    const episodios = await cargarDatos();
+    const similar = episodios
         .filter(e => e.id !== currentEp.id && e.categories.some(c => currentEp.categories.includes(c)))
         .sort(() => 0.5 - Math.random())
         .slice(0, 8);
-
     if (similar.length === 0) return '';
-
     return createCarousel("Te puede interesar", "standard", similar, null, 'items');
 }
 
-// ---------- VISTAS DE DETALLE ----------
-export function renderEpisodio(container, episodioId) {
+// ---------- VISTAS DE DETALLE (asíncronas) ----------
+export async function renderEpisodio(container, episodioId) {
     try {
-        const ep = DATA.find(e => e.id === episodioId);
+        const episodios = await cargarDatos();
+        const ep = episodios.find(e => e.id === episodioId);
         if (!ep) {
-            import('./404.js').then(m => m.render(container));
+            const module404 = await import('./404.js');
+            module404.render(container);
             return;
         }
         const inPlaylist = userStorage.playlist.has(ep.id);
@@ -450,8 +461,7 @@ export function renderEpisodio(container, episodioId) {
                         </div>
                     </div>
                 ` : ''}
-                <!-- CARRUSEL RECOMENDADOS -->
-                ${createRecommendedCarousel(ep)}
+                ${await createRecommendedCarousel(ep)}
             </div>
         `;
         container.innerHTML = html;
@@ -464,14 +474,16 @@ export function renderEpisodio(container, episodioId) {
     }
 }
 
-export function renderSerie(container, serieUrl) {
+export async function renderSerie(container, serieUrl) {
     try {
-        const serie = DATA.find(e => e.series?.url_serie === serieUrl)?.series;
+        const episodios = await cargarDatos();
+        const serie = episodios.find(e => e.series?.url_serie === serieUrl)?.series;
         if (!serie) {
-            import('./404.js').then(m => m.render(container));
+            const module404 = await import('./404.js');
+            module404.render(container);
             return;
         }
-        const episodiosSerie = DATA.filter(e => e.series?.url_serie === serieUrl);
+        const episodiosSerie = episodios.filter(e => e.series?.url_serie === serieUrl);
         episodiosSerie.sort((a, b) => new Date(b.date) - new Date(a.date));
         const episodiosHtml = episodiosSerie.map(ep => {
             const inPlaylist = userStorage.playlist.has(ep.id);
@@ -570,8 +582,7 @@ export function renderSerie(container, serieUrl) {
                         ${episodiosHtml}
                     </div>
                 </div>
-                <!-- CARRUSEL RECOMENDADOS AL FINAL DE LA SERIE -->
-                ${createRecommendedCarousel(episodiosSerie[0])}
+                ${await createRecommendedCarousel(episodiosSerie[0])}
             </div>
         `;
         container.innerHTML = html;
@@ -584,8 +595,8 @@ export function renderSerie(container, serieUrl) {
     }
 }
 
-// ---------- RENDER FEED (sin cambios mayores, solo colores) ----------
-export function renderFeed(container) {
+// ---------- RENDER FEED (asíncrono) ----------
+export async function renderFeed(container) {
     let feedView = document.getElementById('feed-view');
     let gridView = document.getElementById('grid-view');
     if (!feedView) {
@@ -607,73 +618,51 @@ export function renderFeed(container) {
             </div>
         `;
         feedView = document.getElementById('feed-view');
-gridView = document.getElementById('grid-view');
+        gridView = document.getElementById('grid-view');
+    }
+
+    const episodios = await cargarDatos();
+    
+    // Funciones auxiliares para obtener items aleatorios
+    const getRandom = (count, filterFn = () => true) => {
+        const filtered = episodios.filter(filterFn);
+        if (filtered.length === 0) return [];
+        const shuffled = [...filtered].sort(() => 0.5 - Math.random());
+        return shuffled.slice(0, Math.min(count, filtered.length));
+    };
+
+    const isRecent = (ep) => new Date(ep.date) > new Date(Date.now() - 30*24*60*60*1000);
+    const isVideo = (e) => e.initialMode === 'video';
+    const isMathOrPhysics = (e) => e.categories.includes("Matemáticas") || e.categories.includes("Física y Astronomía");
+    const isDocumentary = (e) => e.initialMode === 'video' && e.categories.includes("Documentales");
+    const isNaturalTech = (e) => e.categories.some(c => ["Ciencias Naturales", "Tecnología e Informática"].includes(c));
+    const isOtherSciences = (e) => e.categories.includes("Otras Ciencias") ||
+        e.categories.some(c => ["Ciencias Naturales", "Tecnología e Informática"].includes(c));
+    const isAudio = (e) => e.initialMode === 'audio';
+    const isCurious = (e) => /\b(investigación|investigacion|criminalística|criminalistica|crimen|delito|forense|guerra|conflicto|violencia|seguridad|policía|policia|detective|asesinato|homicidio|justicia|penal|legal|sociedad|problema social)\b/i
+        .test(e.title + ' ' + e.description + ' ' + (e.series?.titulo_serie || ''));
+
+    feedView.innerHTML = '';
+    feedView.innerHTML += createCarousel("Destacados del Día", "vertical", getRandom(15), "Todos", 'items');
+    feedView.innerHTML += createCarousel("Nuevos Lanzamientos", "standard", getRandom(15, isRecent), "Todos", 'items');
+    feedView.innerHTML += createCarousel("Series de Video", "expand", getRandom(10, isVideo), "Cine y TV", 'category');
+    feedView.innerHTML += createCarousel("Top Semanal", "list", getRandom(16), "Todos", 'items');
+    feedView.innerHTML += createCarousel("Para Estudiar Profundamente", "double", getRandom(20, isMathOrPhysics), "Matemáticas", 'category');
+    feedView.innerHTML += createCarousel("Matemáticas", "standard", getRandom(15, e => e.categories.includes("Matemáticas")), "Matemáticas", 'category');
+    feedView.innerHTML += createCarousel("Especiales en Video", "expand", getRandom(10, isDocumentary), "Documentales", 'category');
+    feedView.innerHTML += createCarousel("Física y Astronomía", "standard", getRandom(15, e => e.categories.includes("Física y Astronomía")), "Física y Astronomía", 'category');
+    feedView.innerHTML += createCarousel("Ciencias Naturales y Tecnología", "double", getRandom(20, isNaturalTech), "Otras Ciencias", 'category');
+    feedView.innerHTML += await createSeriesCarousel();
+    feedView.innerHTML += createCarousel("Otras Ciencias y Disciplinas", "standard", getRandom(15, isOtherSciences), "Otras Ciencias", 'category');
+    feedView.innerHTML += createCarousel("Imprescindibles del Mes", "list", getRandom(16, e => new Date(e.date) > new Date(Date.now() - 60*24*60*60*1000)), "Todos", 'items');
+    feedView.innerHTML += createCarousel("Podcasts Destacados", "standard", getRandom(15, isAudio), "Todos", 'items');
+    feedView.innerHTML += createCarousel("Charlas y Conferencias", "expand", getRandom(10, e => e.initialMode === 'video' && (e.categories.includes("Cine y TV") || e.categories.includes("Documentales"))), "Cine y TV", 'category');
+    feedView.innerHTML += createCarousel("Mentes Curiosas", "standard", getRandom(15, isCurious), "Derecho", 'category');
+    feedView.innerHTML += createCarousel("Mix de Saberes", "double", getRandom(20), "Todos", 'items');
 }
 
-const getRandomSafe = (count, filterFn = () => true) => {
-    const filtered = DATA.filter(filterFn);
-    if (filtered.length === 0) return [];
-    const shuffled = [...filtered].sort(() => 0.5 - Math.random());
-    return shuffled.slice(0, Math.min(count, filtered.length));
-};
-
-feedView.innerHTML = '';
-
-feedView.innerHTML += createCarousel("Destacados del Día", "vertical",
-    getRandomSafe(15), "Todos", 'items');
-
-feedView.innerHTML += createCarousel("Nuevos Lanzamientos", "standard",
-    getRandomSafe(15, ep => new Date(ep.date) > new Date(Date.now() - 30*24*60*60*1000)), "Todos", 'items');
-
-feedView.innerHTML += createCarousel("Series de Video", "expand",
-    getRandomSafe(10, e => e.initialMode === 'video'), "Cine y TV", 'category');
-
-feedView.innerHTML += createCarousel("Top Semanal", "list",
-    getRandomSafe(16), "Todos", 'items');
-
-feedView.innerHTML += createCarousel("Para Estudiar Profundamente", "double",
-    getRandomSafe(20, e => e.categories.includes("Matemáticas") || e.categories.includes("Física y Astronomía")), "Matemáticas", 'category');
-
-feedView.innerHTML += createCarousel("Matemáticas", "standard",
-    getRandomSafe(15, e => e.categories.includes("Matemáticas")), "Matemáticas", 'category');
-
-feedView.innerHTML += createCarousel("Especiales en Video", "expand",
-    getRandomSafe(10, e => e.initialMode === 'video' && e.categories.includes("Documentales")), "Documentales", 'category');
-
-feedView.innerHTML += createCarousel("Física y Astronomía", "standard",
-    getRandomSafe(15, e => e.categories.includes("Física y Astronomía")), "Física y Astronomía", 'category');
-
-feedView.innerHTML += createCarousel("Ciencias Naturales y Tecnología", "double",
-    getRandomSafe(20, e => e.categories.some(c => ["Ciencias Naturales", "Tecnología e Informática"].includes(c))), "Otras Ciencias", 'category');
-
-feedView.innerHTML += createSeriesCarousel();
-
-feedView.innerHTML += createCarousel("Otras Ciencias y Disciplinas", "standard",
-    getRandomSafe(15, e => e.categories.includes("Otras Ciencias") ||
-        e.categories.some(c => ["Ciencias Naturales", "Tecnología e Informática"].includes(c))),
-    "Otras Ciencias", 'category');
-
-feedView.innerHTML += createCarousel("Imprescindibles del Mes", "list",
-    getRandomSafe(16, e => new Date(e.date) > new Date(Date.now() - 60*24*60*60*1000)), "Todos", 'items');
-
-feedView.innerHTML += createCarousel("Podcasts Destacados", "standard",
-    getRandomSafe(15, e => e.initialMode === 'audio'), "Todos", 'items');
-
-feedView.innerHTML += createCarousel("Charlas y Conferencias", "expand",
-    getRandomSafe(10, e => e.initialMode === 'video' && (e.categories.includes("Cine y TV") || e.categories.includes("Documentales"))), "Cine y TV", 'category');
-
-feedView.innerHTML += createCarousel("Mentes Curiosas", "standard",
-    getRandomSafe(15, e =>
-        /\b(investigación|investigacion|criminalística|criminalistica|crimen|delito|forense|guerra|conflicto|violencia|seguridad|policía|policia|detective|asesinato|homicidio|justicia|penal|legal|sociedad|problema social)\b/i
-        .test(e.title + ' ' + e.description + ' ' + (e.series?.titulo_serie || ''))
-    ), "Derecho", 'category');
-
-feedView.innerHTML += createCarousel("Mix de Saberes", "double",
-    getRandomSafe(20), "Todos", 'items');
-}
-
-// ---------- RENDER GRID ----------
-export function renderGrid(container, items, title) {
+// ---------- RENDER GRID (asíncrono) ----------
+export async function renderGrid(container, items, title) {
     let gridView = document.getElementById('grid-view');
     if (!gridView) {
         container.innerHTML = `
@@ -707,7 +696,8 @@ export function renderGrid(container, items, title) {
         gridContainer.classList.add('hidden');
         const searchTerm = title.replace('Resultados para ', '').replace(/"/g, '');
         document.getElementById('empty-msg').innerText = `No hemos encontrado nada para "${searchTerm}"`;
-        const suggestions = [...DATA].sort(() => 0.5 - Math.random()).slice(0, 5);
+        const episodios = await cargarDatos();
+        const suggestions = [...episodios].sort(() => 0.5 - Math.random()).slice(0, 5);
         const recGrid = document.getElementById('recommendations-grid');
         recGrid.innerHTML = '';
         suggestions.forEach(ep => {
@@ -730,15 +720,15 @@ export function renderGrid(container, items, title) {
     });
 }
 
-// ---------- RENDER GRID DE SERIES ----------
-export function renderSeriesGrid(container, title) {
+// ---------- RENDER GRID DE SERIES (asíncrono) ----------
+export async function renderSeriesGrid(container, title) {
+    const episodios = await cargarDatos();
     const seriesSet = new Map();
-    DATA.forEach(ep => {
+    episodios.forEach(ep => {
         if (ep.series && !seriesSet.has(ep.series.url_serie)) {
             seriesSet.set(ep.series.url_serie, ep.series);
         }
     });
-
     const series = Array.from(seriesSet.values());
 
     let gridView = document.getElementById('grid-view');
@@ -795,7 +785,7 @@ export function renderSeriesGrid(container, title) {
     });
 }
 
-// ---------- FUNCIONES GLOBALES ----------
+// ---------- FUNCIONES GLOBALES (adaptadas a asincronía) ----------
 window.shareContent = async (title, url, cover = '', description = '') => {
     const fullUrl = window.location.origin + url;
     const shareData = {
@@ -803,8 +793,6 @@ window.shareContent = async (title, url, cover = '', description = '') => {
         text: description.substring(0, 150) + (description.length > 150 ? '...' : ''),
         url: fullUrl
     };
-
-    // Meta tags para redes sociales
     const updateMeta = (property, content) => {
         let meta = document.querySelector(`meta[property="${property}"]`);
         if (!meta) {
@@ -814,27 +802,21 @@ window.shareContent = async (title, url, cover = '', description = '') => {
         }
         meta.setAttribute('content', content);
     };
-
     updateMeta('og:title', title);
     updateMeta('og:description', description);
     updateMeta('og:image', cover || 'https://balta-media.odoo.com/default-og-image.jpg');
     updateMeta('og:url', fullUrl);
-
     if (navigator.share) {
-        try {
-            await navigator.share(shareData);
-        } catch (e) {
-            navigator.clipboard.writeText(fullUrl);
-        }
+        try { await navigator.share(shareData); } catch (e) { navigator.clipboard.writeText(fullUrl); }
     } else {
         navigator.clipboard.writeText(fullUrl);
     }
 };
 
-window.handlePlay = function(e, episodioId) {
+window.handlePlay = async function(e, episodioId) {
     e.stopImmediatePropagation();
     e.preventDefault();
-    const ep = DATA.find(x => x.id === episodioId);
+    const ep = await obtenerEpisodio(episodioId);
     if (!ep) return;
 
     window.playEpisodeExpanded(
@@ -846,7 +828,7 @@ window.handlePlay = function(e, episodioId) {
         ep.title || '',
         ep.detailUrl || '',
         ep.author || '',
-        getAllEpisodios(),
+        await getAllEpisodios(),  // ¡Importante! ahora await
         ep.text || ep.description || '',
         ep.subtitlesUrl || '',
         ep.bgColor || '#0a0a0a',
@@ -854,37 +836,33 @@ window.handlePlay = function(e, episodioId) {
     );
 };
 
-window.handleDl = function(e, episodioId) {
+window.handleDl = async function(e, episodioId) {
     e.stopImmediatePropagation();
     e.preventDefault();
-    const ep = DATA.find(x => x.id === episodioId);
+    const ep = await obtenerEpisodio(episodioId);
     if (!ep || !ep.allowDownload) return;
-
     const link = ep.mediaVideo || ep.mediaUrl;
     if (!link) return;
-
     const a = document.createElement('a');
     a.href = link;
     a.download = `${ep.title.replace(/[^a-z0-9]/gi, '_')}.${ep.mediaVideo ? 'mp4' : 'm4a'}`;
-    a.target = '_blank'; // fallback: abre en pestaña si falla descarga
+    a.target = '_blank';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
 };
 
-window.handleAdd = function(e, episodioId) {
+window.handleAdd = async function(e, episodioId) {
     e.stopImmediatePropagation();
     e.preventDefault();
-    const ep = DATA.find(x => x.id === episodioId);
+    const ep = await obtenerEpisodio(episodioId);
     if (!ep) return;
-
     const alreadyIn = userStorage.playlist.has(ep.id);
     if (alreadyIn) {
         userStorage.playlist.remove(ep.id);
     } else {
         userStorage.playlist.add(ep);
     }
-
     document.querySelectorAll(`[data-episodio-id="${episodioId}"] img[data-added], [data-episodio-id="${episodioId}"] .action-icon[data-added]`)
         .forEach(img => {
             if (img.tagName === 'IMG') {
@@ -910,8 +888,9 @@ window.handleCategoryClick = function(category) {
     window.scrollTo({ top: 0, behavior: 'smooth' });
 };
 
-window.showItemsGrid = function(title, itemIds) {
-    const items = itemIds.map(id => DATA.find(ep => ep.id === id)).filter(ep => ep);
+window.showItemsGrid = async function(title, itemIds) {
+    const episodios = await cargarDatos();
+    const items = itemIds.map(id => episodios.find(ep => ep.id === id)).filter(ep => ep);
     const container = document.getElementById('app');
     if (container) renderGrid(container, items, title);
 };
@@ -924,7 +903,6 @@ window.showSeriesGrid = function(title) {
 export function renderCategoryPills(activeCat = 'Todos') {
     const container = document.getElementById('category-pills');
     if (!container) return;
-
     container.innerHTML = '';
     CATEGORIES.forEach(cat => {
         const isActive = cat === activeCat;
@@ -936,6 +914,7 @@ export function renderCategoryPills(activeCat = 'Todos') {
     });
 }
 
+// Inicializar píldoras cuando el DOM esté listo
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => renderCategoryPills());
 } else {
@@ -948,14 +927,11 @@ document.addEventListener('click', function(e) {
         '[data-action], .play-icon-lg, .mobile-play-button, .episode-play-btn, .action-icon'
     );
     if (!target) return;
-
     e.preventDefault();
     e.stopPropagation();
     e.stopImmediatePropagation();
-
     const episodioId = target.closest('[data-episodio-id]')?.dataset.episodioId;
     if (!episodioId) return;
-
     if (target.matches('[data-action="play"], .play-icon-lg, .mobile-play-button, .episode-play-btn')) {
         window.handlePlay(e, episodioId);
     } else if (target.matches('[data-action="dl"]') || target.title?.includes('Descargar')) {
@@ -965,7 +941,6 @@ document.addEventListener('click', function(e) {
     }
 }, true);
 
-// ---------- ALERTA PERSONALIZADA ----------
 function showCustomAlert(title, message) {
     const fullMessage = `"${title}" ${message}`;
     const modal = document.createElement('div');
@@ -984,4 +959,4 @@ function showCustomAlert(title, message) {
     modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
 }
 
-console.log('✅ show.js cargado completamente - versión modernizada 2026');
+console.log('✅ show.js cargado completamente - versión asíncrona para Firebase');
