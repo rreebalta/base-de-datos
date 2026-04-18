@@ -1,37 +1,84 @@
-// episodios.js - Servicio con Firestore y autenticación
+// episodios.js - Servicio de datos con Firestore
 import { db, auth } from './firebase';
-import { collection, getDocs, doc, getDoc, query, where, setDoc, deleteDoc } from 'firebase/firestore';
-import { signInAnonymously, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
+import { collection, getDocs, doc, getDoc, query, where } from 'firebase/firestore';
 
 // ========================
-// FUNCIONES PARA DATOS (consultas a Firestore)
+// CACHÉ INTERNO (para no llamar a Firestore cada vez)
 // ========================
+let cachedEpisodios = null;
+let cachedSeries = null;
+
+// Función para cargar todos los episodios y series una sola vez
+async function cargarDatos() {
+  if (cachedEpisodios !== null && cachedSeries !== null) {
+    return { episodios: cachedEpisodios, series: cachedSeries };
+  }
+
+  console.log('🔄 Cargando datos desde Firestore...');
+
+  // Obtener todas las series
+  const seriesSnap = await getDocs(collection(db, 'series'));
+  const series = [];
+  seriesSnap.forEach(doc => {
+    series.push({ id: doc.id, ...doc.data() });
+  });
+  cachedSeries = series;
+
+  // Obtener todos los episodios
+  const episodiosSnap = await getDocs(collection(db, 'episodios'));
+  const episodios = [];
+  episodiosSnap.forEach(doc => {
+    episodios.push({ id: doc.id, ...doc.data() });
+  });
+
+  // Asociar la serie a cada episodio (buscar por seriesid)
+  const seriesMap = Object.fromEntries(series.map(s => [s.seriesid, s]));
+  cachedEpisodios = episodios.map(ep => ({
+    ...ep,
+    series: seriesMap[ep.seriesid] || null
+  }));
+
+  console.log(`✅ Cargados ${cachedEpisodios.length} episodios y ${cachedSeries.length} series`);
+  return { episodios: cachedEpisodios, series: cachedSeries };
+}
+
+// ========================
+// FUNCIONES EXPORTADAS (para usar en tu SPA)
+// ========================
+
+export async function getAllEpisodios() {
+  const { episodios } = await cargarDatos();
+  return episodios;
+}
 
 export async function getAllSeries() {
-  const snapshot = await getDocs(collection(db, 'series'));
-  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  const { series } = await cargarDatos();
+  return series;
+}
+
+export async function getEpisodioById(id) {
+  const { episodios } = await cargarDatos();
+  return episodios.find(ep => ep.id === id) || null;
+}
+
+export async function getEpisodioByDetailUrl(url) {
+  const { episodios } = await cargarDatos();
+  return episodios.find(ep => ep.detailUrl === url) || null;
 }
 
 export async function getSerieById(seriesid) {
-  const docRef = doc(db, 'series', seriesid);
-  const snap = await getDoc(docRef);
-  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+  const { series } = await cargarDatos();
+  return series.find(s => s.seriesid === seriesid) || null;
 }
 
 export async function getSerieByUrl(url) {
-  const series = await getAllSeries();
+  const { series } = await cargarDatos();
   return series.find(s => s.url_serie === url) || null;
 }
 
-export async function getAllEpisodios() {
-  const snapshot = await getDocs(collection(db, 'episodios'));
-  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-}
-
 export async function getEpisodiosBySerieId(seriesid) {
-  const q = query(collection(db, 'episodios'), where('seriesid', '==', seriesid));
-  const snapshot = await getDocs(q);
-  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  const { episodios } = await cargarDatos();
+  return episodios.filter(ep => ep.seriesid === seriesid);
 }
 
 export async function getEpisodiosBySerieUrl(url) {
@@ -40,123 +87,21 @@ export async function getEpisodiosBySerieUrl(url) {
   return getEpisodiosBySerieId(serie.seriesid);
 }
 
-export async function getEpisodioById(id) {
-  const docRef = doc(db, 'episodios', id);
-  const snap = await getDoc(docRef);
-  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
-}
-
-export async function getEpisodioByDetailUrl(url) {
-  const episodios = await getAllEpisodios();
-  return episodios.find(ep => ep.detailUrl === url) || null;
-}
-
 export async function getEpisodiosConSerie() {
-  const [episodios, series] = await Promise.all([getAllEpisodios(), getAllSeries()]);
-  const seriesMap = Object.fromEntries(series.map(s => [s.seriesid, s]));
-  return episodios.map(ep => ({ ...ep, series: seriesMap[ep.seriesid] || null }));
+  const { episodios } = await cargarDatos();
+  return episodios;
 }
 
 // ========================
-// AUTENTICACIÓN Y ESTADO
+// AUTENTICACIÓN Y SESIÓN
 // ========================
-
-let currentUser = null;
-let currentUserPremium = false;
-const authListeners = [];
-
-export function onAuthChange(callback) {
-  authListeners.push(callback);
-  callback({ user: currentUser, premium: currentUserPremium });
+export function getCurrentUser() {
+  return auth.currentUser;
 }
 
-// Actualizar claims premium (desde el token)
-async function updatePremiumStatus() {
-  if (!auth.currentUser) {
-    currentUserPremium = false;
-    return;
-  }
-  const tokenResult = await auth.currentUser.getIdTokenResult();
-  currentUserPremium = tokenResult.claims.premium === true;
-}
-
-// Iniciar sesión anónima (automática al cargar)
-export async function initAnonymousSession() {
-  try {
-    const userCred = await signInAnonymously(auth);
-    currentUser = userCred.user;
-    await updatePremiumStatus();
-    authListeners.forEach(cb => cb({ user: currentUser, premium: currentUserPremium }));
-    return currentUser;
-  } catch (error) {
-    console.error('Error en autenticación anónima:', error);
-    throw error;
-  }
-}
-
-// Registrar con email/contraseña
-export async function registerWithEmail(email, password) {
-  const userCred = await createUserWithEmailAndPassword(auth, email, password);
-  currentUser = userCred.user;
-  await updatePremiumStatus();
-  authListeners.forEach(cb => cb({ user: currentUser, premium: currentUserPremium }));
-  return currentUser;
-}
-
-// Iniciar sesión con email/contraseña
-export async function loginWithEmail(email, password) {
-  const userCred = await signInWithEmailAndPassword(auth, email, password);
-  currentUser = userCred.user;
-  await updatePremiumStatus();
-  authListeners.forEach(cb => cb({ user: currentUser, premium: currentUserPremium }));
-  return currentUser;
-}
-
-// Cerrar sesión
-export async function logout() {
-  await signOut(auth);
-  currentUser = null;
-  currentUserPremium = false;
-  authListeners.forEach(cb => cb({ user: null, premium: false }));
-}
-
-// Verificar si un episodio es accesible (según premium)
-export function isEpisodioAccesible(episodio, userPremium = currentUserPremium) {
-  if (!episodio.premium) return true;
-  return userPremium === true;
-}
-
-// ========================
-// FAVORITOS (requiere login)
-// ========================
-
-async function getCurrentUserId() {
-  if (!auth.currentUser) throw new Error('Debes iniciar sesión');
-  return auth.currentUser.uid;
-}
-
-export async function getFavoritos() {
-  const uid = await getCurrentUserId();
-  const favCollection = collection(db, 'usuarios', uid, 'favoritos');
-  const snapshot = await getDocs(favCollection);
-  return snapshot.docs.map(doc => ({ episodioId: doc.id, ...doc.data() }));
-}
-
-export async function addFavorito(episodioId) {
-  const uid = await getCurrentUserId();
-  const favRef = doc(db, 'usuarios', uid, 'favoritos', episodioId);
-  await setDoc(favRef, { fecha_agregado: new Date().toISOString() });
-}
-
-export async function removeFavorito(episodioId) {
-  const uid = await getCurrentUserId();
-  const favRef = doc(db, 'usuarios', uid, 'favoritos', episodioId);
-  await deleteDoc(favRef);
-}
-
-export async function isFavorito(episodioId) {
-  const uid = await getCurrentUserId();
-  const favRef = doc(db, 'usuarios', uid, 'favoritos', episodioId);
-  const snap = await getDoc(favRef);
-  return snap.exists();
+export async function isPremiumUser() {
+  const user = auth.currentUser;
+  if (!user) return false;
+  const tokenResult = await user.getIdTokenResult();
+  return tokenResult.claims.premium === true;
 }
