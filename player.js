@@ -1,9 +1,6 @@
 /**
  * Mobile Media Player — Spotify + YouTube Music Style
- * Touch gestures, Media Session API, dynamic colors, subtitles
- * Single standalone file — attach via <script src="player-mobile.js"></script>
- *
- * API: window.playEpisodeExpanded(mediaUrl, mediaVideo, initialMode, coverUrl, coverInfo, title, detailUrl, author, queue, text, subtitlesUrl, bgColor, allowDownload)
+ * v2.0 - Fullscreen video, Spotify‑like subtitles, canonical sharing, improved timers & gestures
  */
 (function () {
   'use strict';
@@ -13,7 +10,20 @@
   const $$ = (s, p) => [...(p || document).querySelectorAll(s)];
   const ce = (t) => document.createElement(t);
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-  const fmt = (s) => { const m = Math.floor(s / 60); const sec = Math.floor(s % 60); return `${m}:${sec < 10 ? '0' : ''}${sec}`; };
+  const fmt = (s) => {
+    if (!isFinite(s)) return '0:00';
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${m}:${sec < 10 ? '0' : ''}${sec}`;
+  };
+  const fmtLong = (s) => {
+    if (!isFinite(s)) return '0:00';
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = Math.floor(s % 60);
+    if (h > 0) return `${h}:${m < 10 ? '0' : ''}${m}:${sec < 10 ? '0' : ''}${sec}`;
+    return `${m}:${sec < 10 ? '0' : ''}${sec}`;
+  };
   function hexToHSL(hex) {
     hex = hex.replace('#', '');
     const r = parseInt(hex.substring(0, 2), 16) / 255;
@@ -40,7 +50,7 @@
   function textColor(hex) { return luminance(hex) > 0.55 ? '#111' : '#fff'; }
   function textColorSub(hex) { return luminance(hex) > 0.55 ? 'rgba(0,0,0,0.55)' : 'rgba(255,255,255,0.6)'; }
 
-  /* ─── SVG icons ─── */
+  /* ─── SVG icons (complete set) ─── */
   const icons = {
     play: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>`,
     pause: `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>`,
@@ -60,11 +70,14 @@
     close: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`,
     more: `<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>`,
     repeat: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg>`,
+    repeatOne: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/><circle cx="12" cy="12" r="2.5" fill="currentColor"/></svg>`,
     shuffle: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg>`,
     info: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>`,
+    fullscreen: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>`,
+    exitFullscreen: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/></svg>`,
   };
 
-  /* ─── STYLES ─── */
+  /* ─── STYLES (improved for fullscreen, subtitles, drag areas) ─── */
   const style = ce('style');
   style.textContent = `
 /* Reset for player */
@@ -104,18 +117,25 @@
 .mp-exp-m.open { transform: translateY(0); }
 .mp-exp-m.dragging { transition: none; }
 
-/* Drag handle */
-.mp-exp-handle {
-  width: 100%; display: flex; justify-content: center; padding: 10px 0 4px; flex-shrink: 0;
+/* Drag handle - enlarged area (top 30% of screen) */
+.mp-exp-drag-area {
+  position: absolute; top: 0; left: 0; right: 0; height: 30%;
+  z-index: 20;
+  pointer-events: auto;
+  background: transparent;
 }
-.mp-exp-handle span { width: 36px; height: 4px; border-radius: 4px; background: rgba(255,255,255,0.35); }
+.mp-exp-handle {
+  width: 100%; display: flex; justify-content: center; padding: 12px 0 4px; flex-shrink: 0;
+  position: relative; z-index: 21;
+}
+.mp-exp-handle span { width: 40px; height: 5px; border-radius: 4px; background: rgba(255,255,255,0.4); }
 
 /* Header row */
 .mp-exp-header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 0 16px 8px; flex-shrink: 0;
+  padding: 0 16px 8px; flex-shrink: 0; position: relative; z-index: 10;
 }
-.mp-exp-header button { width: 32px; height: 32px; padding: 4px; border-radius: 50%; }
+.mp-exp-header button { width: 36px; height: 36px; padding: 6px; border-radius: 50%; }
 .mp-exp-header button:active { background: rgba(255,255,255,0.1); }
 
 /* Media area */
@@ -127,29 +147,34 @@
 .mp-media-area img {
   max-width: 100%; max-height: 100%; border-radius: 12px;
   object-fit: cover; box-shadow: 0 8px 40px rgba(0,0,0,0.35);
-  aspect-ratio: 1; width: min(85vw, 360px);
+  aspect-ratio: 1; width: min(75vw, 300px);
+  transition: opacity 0.2s;
 }
 .mp-media-area video {
   max-width: 100%; max-height: 100%; border-radius: 8px;
   object-fit: contain; background: #000;
 }
-.mp-subtitles-overlay {
-  position: absolute; bottom: 16px; left: 16px; right: 16px;
-  text-align: center; font-size: 15px; font-weight: 500;
-  text-shadow: 0 1px 6px rgba(0,0,0,0.7);
-  padding: 6px 12px; border-radius: 6px;
-  background: rgba(0,0,0,0.45); line-height: 1.4;
-}
-/* Subtitle full screen (audio mode) */
+/* Spotify‑like subtitles (audio mode) */
 .mp-subtitle-full {
   display: flex; align-items: center; justify-content: center;
   width: 100%; height: 100%; padding: 24px;
-  text-align: center; font-size: 22px; font-weight: 600;
-  line-height: 1.5; letter-spacing: 0.01em;
+  text-align: center; font-size: clamp(1.4rem, 8vw, 2.2rem);
+  font-weight: 700; line-height: 1.4; letter-spacing: -0.01em;
+  background: transparent; color: white; text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+  word-break: break-word;
+}
+/* Subtitles overlay on video */
+.mp-subtitles-overlay {
+  position: absolute; bottom: 20px; left: 16px; right: 16px;
+  text-align: center; font-size: 16px; font-weight: 600;
+  text-shadow: 0 1px 6px rgba(0,0,0,0.7);
+  padding: 8px 12px; border-radius: 8px;
+  background: rgba(0,0,0,0.6); line-height: 1.4;
+  pointer-events: none;
 }
 
 /* Controls area */
-.mp-controls-area { flex-shrink: 0; padding: 0 20px 8px; }
+.mp-controls-area { flex-shrink: 0; padding: 0 20px 12px; position: relative; z-index: 10; }
 .mp-track-info { text-align: center; margin-bottom: 12px; }
 .mp-track-title { font-size: 18px; font-weight: 700; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mp-track-author { font-size: 13px; opacity: 0.6; }
@@ -178,38 +203,42 @@
 
 /* Extra buttons row */
 .mp-extra-btns { display: flex; align-items: center; justify-content: space-around; padding: 4px 8px 6px; }
-.mp-extra-btns button { width: 34px; height: 34px; padding: 6px; border-radius: 50%; opacity: 0.7; position: relative; }
+.mp-extra-btns button { width: 36px; height: 36px; padding: 6px; border-radius: 50%; opacity: 0.7; position: relative; }
 .mp-extra-btns button.active { opacity: 1; }
 .mp-extra-btns button:active { opacity: 0.5; }
 .mp-extra-btns .mp-badge {
-  position: absolute; top: 0; right: 0; font-size: 8px; font-weight: 700;
-  background: currentColor; width: 16px; height: 16px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
+  position: absolute; top: 0; right: 0; font-size: 9px; font-weight: 700;
+  background: currentColor; width: 18px; height: 18px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; color: black;
 }
+.mp-fullscreen-btn { margin-left: auto; }
 
 /* Panel overlay */
 .mp-panel-m {
   position: absolute; bottom: 0; left: 0; right: 0;
-  max-height: 65vh; border-radius: 16px 16px 0 0;
-  background: rgba(30,30,30,0.97); color: #fff;
+  max-height: 70vh; border-radius: 20px 20px 0 0;
+  background: rgba(30,30,30,0.98); color: #fff;
   transform: translateY(100%);
   transition: transform 0.35s cubic-bezier(0.4,0,0.2,1);
-  z-index: 10; overflow: hidden;
+  z-index: 15; overflow: hidden;
   display: flex; flex-direction: column;
   backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
 }
 .mp-panel-m.open { transform: translateY(0); }
 .mp-panel-m.dragging { transition: none; }
-.mp-panel-handle { display: flex; justify-content: center; padding: 10px 0 6px; flex-shrink: 0; }
-.mp-panel-handle span { width: 36px; height: 4px; border-radius: 4px; background: rgba(255,255,255,0.3); }
+.mp-panel-handle {
+  display: flex; justify-content: center; padding: 12px 0 8px; flex-shrink: 0;
+  background: transparent;
+}
+.mp-panel-handle span { width: 40px; height: 5px; border-radius: 4px; background: rgba(255,255,255,0.3); }
 .mp-panel-head { display: flex; align-items: center; justify-content: space-between; padding: 0 16px 10px; flex-shrink: 0; }
-.mp-panel-head h3 { font-size: 16px; font-weight: 700; }
-.mp-panel-head button { width: 28px; height: 28px; padding: 4px; border-radius: 50%; }
+.mp-panel-head h3 { font-size: 18px; font-weight: 700; }
+.mp-panel-head button { width: 32px; height: 32px; padding: 6px; border-radius: 50%; }
 .mp-panel-body { flex: 1; overflow-y: auto; padding: 0 16px 24px; -webkit-overflow-scrolling: touch; }
 
 /* Queue item */
 .mp-queue-item {
-  display: flex; align-items: center; gap: 12px; padding: 10px 4px;
+  display: flex; align-items: center; gap: 12px; padding: 12px 4px;
   border-bottom: 1px solid rgba(255,255,255,0.06); border-radius: 8px;
 }
 .mp-queue-item:active { background: rgba(255,255,255,0.06); }
@@ -236,32 +265,51 @@
 .mp-timer-opt.active .check { border-color: #1db954; background: #1db954; }
 .mp-timer-opt.active .check::after { content: '✓'; color: #000; font-size: 12px; font-weight: 700; }
 
-/* Share buttons */
+/* Share buttons (SVG based) */
 .mp-share-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; padding: 8px 0; }
 .mp-share-item { display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 11px; opacity: 0.8; }
-.mp-share-item button { width: 50px; height: 50px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 22px; }
+.mp-share-item button { width: 52px; height: 52px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.1); }
 .mp-share-item button:active { transform: scale(0.9); }
+.mp-share-item button svg { width: 24px; height: 24px; }
 
 /* Info panel */
 .mp-info-content { font-size: 14px; line-height: 1.7; opacity: 0.8; padding: 4px 0; }
+.mp-dl-btn { display: flex; align-items: center; gap: 8px; padding: 12px 20px; background: rgba(255,255,255,0.1); border-radius: 8px; font-size: 14px; font-weight: 600; width: 100%; justify-content: center; }
 
-/* Animations */
-@keyframes mp-spin { to { transform: rotate(360deg); } }
-@keyframes mp-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-.mp-loading { animation: mp-pulse 1.5s ease-in-out infinite; }
+/* Fullscreen overlay (custom controls) */
+.mp-fs-overlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.85);
+  z-index: 200000;
+  display: flex; flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  padding: 48px 20px 32px;
+  transition: opacity 0.2s;
+  backdrop-filter: blur(8px);
+}
+.mp-fs-overlay.hidden { display: none; }
+.mp-fs-top { text-align: center; color: white; font-size: 18px; font-weight: 600; text-shadow: 0 1px 2px black; }
+.mp-fs-center { display: flex; gap: 32px; align-items: center; }
+.mp-fs-btn { width: 64px; height: 64px; border-radius: 50%; background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; }
+.mp-fs-play { width: 84px; height: 84px; }
+.mp-fs-bottom { width: 100%; max-width: 500px; }
+.mp-fs-progress { height: 4px; background: rgba(255,255,255,0.3); border-radius: 2px; margin-bottom: 12px; cursor: pointer; }
+.mp-fs-progress-fill { height: 100%; background: white; width: 0%; border-radius: 2px; }
+.mp-fs-time { display: flex; justify-content: space-between; color: white; font-size: 12px; margin-bottom: 16px; }
+.mp-fs-exit { position: absolute; top: 20px; right: 20px; background: rgba(0,0,0,0.6); border-radius: 50%; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; }
+
+/* Landscape fullscreen adjustment */
+@media (orientation: landscape) {
+  .mp-fs-center { gap: 48px; }
+  .mp-fs-btn { width: 72px; height: 72px; }
+  .mp-fs-play { width: 96px; height: 96px; }
+}
 
 /* Safe area */
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
   .mp-mini-m { padding-bottom: env(safe-area-inset-bottom); height: calc(64px + env(safe-area-inset-bottom)); }
   .mp-controls-area { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
-}
-
-/* Landscape */
-@media (orientation: landscape) and (max-height: 500px) {
-  .mp-media-area img { width: min(40vw, 200px); }
-  .mp-exp-m { flex-direction: row; }
-  .mp-media-area { width: 45%; }
-  .mp-controls-area { width: 55%; padding-top: 16px; }
 }
 `;
   document.head.appendChild(style);
@@ -276,10 +324,11 @@
     currentTime: 0, duration: 0,
     playbackRate: 1, subtitlesOn: false,
     repeat: 0, shuffle: false,
-    timerEnd: null, timerType: null,
+    timerEnd: null, timerType: null,   // 'minutes' or 'end'
     cues: [], currentCue: '',
     queueIndex: -1,
     initialized: false,
+    fullscreenActive: false,
   };
 
   /* ─── Audio/Video elements ─── */
@@ -315,6 +364,7 @@
   const exp = ce('div');
   exp.className = 'mp-exp-m';
   exp.innerHTML = `
+    <div class="mp-exp-drag-area"></div>
     <div class="mp-exp-handle"><span></span></div>
     <div class="mp-exp-header">
       <button class="mp-btn-collapse" aria-label="Minimize">${icons.chevronDown}</button>
@@ -349,6 +399,7 @@
         <button class="mp-btn-timer" aria-label="Timer">${icons.timer}</button>
         <button class="mp-btn-queue" aria-label="Queue">${icons.queue}</button>
         <button class="mp-btn-share" aria-label="Share">${icons.share}</button>
+        <button class="mp-fullscreen-btn" aria-label="Fullscreen" style="display:none;">${icons.fullscreen}</button>
       </div>
     </div>
     <div class="mp-panel-m">
@@ -362,9 +413,27 @@
   root.appendChild(exp);
   document.body.appendChild(root);
 
+  // Fullscreen overlay (custom)
+  const fsOverlay = ce('div');
+  fsOverlay.className = 'mp-fs-overlay hidden';
+  fsOverlay.innerHTML = `
+    <div class="mp-fs-top"><span class="mp-fs-title"></span></div>
+    <div class="mp-fs-center">
+      <button class="mp-fs-btn mp-fs-prev">${icons.prev}</button>
+      <button class="mp-fs-btn mp-fs-play">${icons.play}</button>
+      <button class="mp-fs-btn mp-fs-next">${icons.next}</button>
+    </div>
+    <div class="mp-fs-bottom">
+      <div class="mp-fs-progress"><div class="mp-fs-progress-fill"></div></div>
+      <div class="mp-fs-time"><span class="mp-fs-current">0:00</span><span class="mp-fs-duration">0:00</span></div>
+    </div>
+    <button class="mp-fs-exit">${icons.exitFullscreen}</button>
+  `;
+  document.body.appendChild(fsOverlay);
+
   /* ─── Element references ─── */
   const els = {
-    mini, exp,
+    mini, exp, fsOverlay,
     miniCover: $('.mp-mini-cover', mini),
     miniTitle: $('.mp-mini-title', mini),
     miniAuthor: $('.mp-mini-author', mini),
@@ -396,11 +465,23 @@
     btnTimer: $('.mp-btn-timer', exp),
     btnQueue: $('.mp-btn-queue', exp),
     btnShare: $('.mp-btn-share', exp),
+    btnFullscreen: $('.mp-fullscreen-btn', exp),
     panel: $('.mp-panel-m', exp),
     panelHead: $('.mp-panel-head h3', exp),
     panelBody: $('.mp-panel-body', exp),
     panelClose: $('.mp-panel-close', exp),
     handle: $('.mp-exp-handle', exp),
+    dragArea: $('.mp-exp-drag-area', exp),
+    // fullscreen overlay elements
+    fsTitle: $('.mp-fs-title', fsOverlay),
+    fsPrev: $('.mp-fs-prev', fsOverlay),
+    fsPlay: $('.mp-fs-play', fsOverlay),
+    fsNext: $('.mp-fs-next', fsOverlay),
+    fsProgress: $('.mp-fs-progress', fsOverlay),
+    fsProgressFill: $('.mp-fs-progress-fill', fsOverlay),
+    fsCurrent: $('.mp-fs-current', fsOverlay),
+    fsDuration: $('.mp-fs-duration', fsOverlay),
+    fsExit: $('.mp-fs-exit', fsOverlay),
   };
 
   /* ─── Colors ─── */
@@ -430,14 +511,13 @@
     els.timeDur.style.color = tcs;
   }
 
-  /* ─── Subtitles ─── */
+  /* ─── Subtitles (Spotify style) ─── */
   async function loadSubtitles(url) {
     state.cues = [];
     if (!url) return;
     try {
       const res = await fetch(url);
       const txt = await res.text();
-      // parse VTT/SRT
       const blocks = txt.split(/\n\s*\n/);
       for (const block of blocks) {
         const lines = block.trim().split('\n');
@@ -456,8 +536,49 @@
   }
 
   function getCurrentCue(time) {
-    for (const c of state.cues) { if (time >= c.start && time <= c.end) return c.text; }
+    for (const c of state.cues) if (time >= c.start && time <= c.end) return c.text;
     return '';
+  }
+
+  function updateSubtitlesDisplay() {
+    const cue = getCurrentCue(state.currentTime);
+    state.currentCue = cue;
+    // For audio mode with subtitles on: replace cover with large text
+    if (state.mode === 'audio' && state.subtitlesOn && state.cues.length && state.isExpanded) {
+      const coverImg = $('.mp-exp-cover', els.mediaArea);
+      const existingSub = $('.mp-subtitle-full', els.mediaArea);
+      if (cue) {
+        if (coverImg) coverImg.style.display = 'none';
+        if (!existingSub) {
+          const subDiv = ce('div');
+          subDiv.className = 'mp-subtitle-full';
+          els.mediaArea.appendChild(subDiv);
+        }
+        const subDiv = $('.mp-subtitle-full', els.mediaArea);
+        subDiv.textContent = cue;
+      } else {
+        if (coverImg) coverImg.style.display = '';
+        if (existingSub) existingSub.remove();
+      }
+    } else if (state.mode === 'video' && state.subtitlesOn && state.cues.length) {
+      let subOverlay = $('.mp-subtitles-overlay', els.mediaArea);
+      if (!subOverlay) {
+        subOverlay = ce('div');
+        subOverlay.className = 'mp-subtitles-overlay';
+        els.mediaArea.appendChild(subOverlay);
+      }
+      subOverlay.textContent = cue || '';
+      if (!cue && subOverlay) subOverlay.textContent = '';
+    } else {
+      // remove any subtitle elements
+      const subAudio = $('.mp-subtitle-full', els.mediaArea);
+      if (subAudio) subAudio.remove();
+      const subVideo = $('.mp-subtitles-overlay', els.mediaArea);
+      if (subVideo) subVideo.remove();
+      // ensure cover is visible
+      const coverImg = $('.mp-exp-cover', els.mediaArea);
+      if (coverImg) coverImg.style.display = '';
+    }
   }
 
   /* ─── Media Session API ─── */
@@ -475,34 +596,22 @@
     navigator.mediaSession.setActionHandler('seekbackward', () => seek(-10));
     navigator.mediaSession.setActionHandler('seekforward', () => seek(10));
     try {
-      navigator.mediaSession.setActionHandler('seekto', (d) => {
-        if (d.seekTime != null) { activeMedia().currentTime = d.seekTime; }
-      });
-    } catch (e) {}
-  }
-
-  function updatePositionState() {
-    if (!('mediaSession' in navigator) || !state.duration) return;
-    try {
-      navigator.mediaSession.setPositionState({
-        duration: state.duration,
-        playbackRate: state.playbackRate,
-        position: Math.min(state.currentTime, state.duration),
-      });
+      navigator.mediaSession.setActionHandler('seekto', (d) => { if (d.seekTime != null) activeMedia().currentTime = d.seekTime; });
     } catch (e) {}
   }
 
   /* ─── Playback ─── */
   function togglePlay() {
     const m = activeMedia();
-    if (m.paused) { m.play().catch(() => {}); }
-    else { m.pause(); }
+    if (m.paused) m.play().catch(() => {});
+    else m.pause();
   }
   function seek(delta) { const m = activeMedia(); m.currentTime = clamp(m.currentTime + delta, 0, m.duration || 0); }
   function setRate(r) {
     state.playbackRate = r;
     audioEl.playbackRate = r;
     videoEl.playbackRate = r;
+    updateSpeedBadge();
   }
 
   function switchMode(mode) {
@@ -524,6 +633,7 @@
     }
     updateMediaArea();
     updateModeBtn();
+    updateSubtitlesDisplay();
   }
 
   function updateModeBtn() {
@@ -533,60 +643,104 @@
     }
     els.btnMode.style.display = '';
     els.btnMode.innerHTML = state.mode === 'video' ? icons.audio : icons.video;
-    els.btnMode.setAttribute('aria-label', state.mode === 'video' ? 'Switch to Audio' : 'Switch to Video');
   }
 
   function updateMediaArea() {
     const area = els.mediaArea;
     // remove video if present
     if (videoEl.parentNode === area) area.removeChild(videoEl);
-    // remove subtitle container
-    const existingSub = $('.mp-subtitles-overlay', area) || $('.mp-subtitle-full', area);
-    if (existingSub) existingSub.remove();
-
+    // keep cover
+    const cover = $('.mp-exp-cover', area);
+    if (!cover) area.appendChild(els.expCover);
     if (state.mode === 'video') {
       els.expCover.style.display = 'none';
       area.insertBefore(videoEl, area.firstChild);
       videoEl.style.width = '100%';
       videoEl.style.height = '100%';
-      // subtitles overlay on video
-      if (state.subtitlesOn && state.cues.length) {
-        const sub = ce('div');
-        sub.className = 'mp-subtitles-overlay';
-        area.appendChild(sub);
-      }
     } else {
       els.expCover.style.display = '';
-      if (state.subtitlesOn && state.cues.length) {
-        els.expCover.style.display = 'none';
-        const sub = ce('div');
-        sub.className = 'mp-subtitle-full';
-        area.appendChild(sub);
-      }
+      if (videoEl.parentNode === area) area.removeChild(videoEl);
+    }
+    // fullscreen button visibility
+    els.btnFullscreen.style.display = (state.mode === 'video' && state.mediaVideo) ? 'flex' : 'none';
+    updateSubtitlesDisplay();
+  }
+
+  /* ─── Fullscreen logic (custom + native) ─── */
+  let fsInterval = null;
+  function updateFsProgress() {
+    if (!state.fullscreenActive) return;
+    const m = activeMedia();
+    const pct = m.duration ? (m.currentTime / m.duration) * 100 : 0;
+    els.fsProgressFill.style.width = pct + '%';
+    els.fsCurrent.textContent = fmt(m.currentTime);
+    els.fsDuration.textContent = fmt(m.duration);
+  }
+  function showFullscreen() {
+    if (state.mode !== 'video') return;
+    const video = videoEl;
+    if (!video) return;
+    // request native fullscreen
+    if (video.requestFullscreen) {
+      video.requestFullscreen().catch(err => console.warn(err));
+    } else if (video.webkitEnterFullscreen) {
+      video.webkitEnterFullscreen(); // iOS
+    }
+    // force landscape
+    if (screen.orientation && screen.orientation.lock) {
+      screen.orientation.lock('landscape').catch(() => {});
+    }
+    // show custom overlay after entering
+  }
+  function exitFullscreen() {
+    if (document.exitFullscreen) document.exitFullscreen();
+    else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+    if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock();
+  }
+  function handleFullscreenChange() {
+    const isFs = !!document.fullscreenElement || !!document.webkitFullscreenElement;
+    state.fullscreenActive = isFs;
+    if (isFs) {
+      els.fsOverlay.classList.remove('hidden');
+      els.fsTitle.textContent = state.title;
+      if (fsInterval) clearInterval(fsInterval);
+      fsInterval = setInterval(updateFsProgress, 250);
+      updateFsProgress();
+      // bind fs controls
+      els.fsPlay.onclick = () => togglePlay();
+      els.fsPrev.onclick = () => playPrev();
+      els.fsNext.onclick = () => playNext();
+      els.fsProgress.onclick = (e) => {
+        const rect = els.fsProgress.getBoundingClientRect();
+        const pct = (e.clientX - rect.left) / rect.width;
+        activeMedia().currentTime = pct * (state.duration || 0);
+      };
+      els.fsExit.onclick = () => exitFullscreen();
+    } else {
+      els.fsOverlay.classList.add('hidden');
+      if (fsInterval) clearInterval(fsInterval);
+      fsInterval = null;
     }
   }
+  document.addEventListener('fullscreenchange', handleFullscreenChange);
+  document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
 
   /* ─── UI Updates ─── */
   function updateUI() {
-    // mini
     els.miniCover.src = state.coverUrl;
     els.miniTitle.textContent = state.title;
     els.miniAuthor.textContent = state.author;
-    // expanded
     els.expCover.src = state.coverUrl;
     els.trackTitle.textContent = state.title;
-    els.trackAuthor.innerHTML = state.detailUrl
-      ? `<a href="${state.detailUrl}">${state.author}</a>`
-      : state.author;
+    els.trackAuthor.innerHTML = state.detailUrl ? `<a href="${state.detailUrl}">${state.author}</a>` : state.author;
   }
 
   function updatePlayBtn() {
     const icon = state.isPlaying ? icons.pause : icons.play;
     els.btnPlay.innerHTML = icon;
     els.miniPlay.innerHTML = icon;
-    if ('mediaSession' in navigator) {
-      navigator.mediaSession.playbackState = state.isPlaying ? 'playing' : 'paused';
-    }
+    if (els.fsPlay) els.fsPlay.innerHTML = icon;
+    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = state.isPlaying ? 'playing' : 'paused';
   }
 
   function updateProgress() {
@@ -595,21 +749,46 @@
     els.miniProgressFill.style.width = pct + '%';
     els.timeCur.textContent = fmt(state.currentTime);
     els.timeDur.textContent = fmt(state.duration);
-    // subtitles
-    if (state.subtitlesOn && state.cues.length) {
-      const cue = getCurrentCue(state.currentTime);
-      state.currentCue = cue;
-      const subEl = $('.mp-subtitles-overlay', els.mediaArea) || $('.mp-subtitle-full', els.mediaArea);
-      if (subEl) subEl.textContent = cue;
+    updateSubtitlesDisplay();
+    // timer check
+    if (state.timerType === 'minutes' && state.timerEnd && Date.now() >= state.timerEnd) {
+      activeMedia().pause();
+      state.timerEnd = null;
+      state.timerType = null;
     }
   }
 
-  /* ─── Expand / Collapse ─── */
+  /* ─── Expand / Collapse with enlarged drag area ─── */
+  let dragStartY = 0, dragCurrentY = 0, isDraggingExp = false;
+  function onDragStart(e) {
+    // ignore if target is a button or interactive element
+    const target = e.target;
+    if (target.closest('button') || target.closest('.mp-panel-m') || target.closest('.mp-fullscreen-btn')) return;
+    dragStartY = e.touches ? e.touches[0].clientY : e.clientY;
+    isDraggingExp = true;
+    exp.classList.add('dragging');
+  }
+  function onDragMove(e) {
+    if (!isDraggingExp) return;
+    const y = e.touches ? e.touches[0].clientY : e.clientY;
+    dragCurrentY = y - dragStartY;
+    if (dragCurrentY < 0) dragCurrentY = 0;
+    exp.style.transform = `translateY(${dragCurrentY}px)`;
+  }
+  function onDragEnd() {
+    if (!isDraggingExp) return;
+    isDraggingExp = false;
+    exp.classList.remove('dragging');
+    if (dragCurrentY > 100) collapse();
+    exp.style.transform = '';
+    dragCurrentY = 0;
+  }
   function expand() {
     state.isExpanded = true;
     exp.classList.add('open');
     mini.classList.add('hidden');
     document.body.style.overflow = 'hidden';
+    updateSubtitlesDisplay();
   }
   function collapse() {
     state.isExpanded = false;
@@ -617,9 +796,44 @@
     mini.classList.remove('hidden');
     closePanel();
     document.body.style.overflow = '';
+    updateSubtitlesDisplay();
   }
 
-  /* ─── Panels ─── */
+  // Bind drag events on both handle and dragArea
+  els.handle.addEventListener('touchstart', onDragStart, { passive: true });
+  els.dragArea.addEventListener('touchstart', onDragStart, { passive: true });
+  document.addEventListener('touchmove', onDragMove, { passive: true });
+  document.addEventListener('touchend', onDragEnd);
+
+  /* ─── Panel with enlarged handle (bottom) ─── */
+  let panelDragStart = 0, panelDragCurrent = 0, isDraggingPanel = false;
+  const panelHandle = $('.mp-panel-handle', exp);
+  function onPanelDragStart(e) {
+    const target = e.target;
+    if (target.closest('button')) return;
+    panelDragStart = e.touches[0].clientY;
+    isDraggingPanel = true;
+    els.panel.classList.add('dragging');
+  }
+  function onPanelDragMove(e) {
+    if (!isDraggingPanel) return;
+    const y = e.touches[0].clientY;
+    panelDragCurrent = y - panelDragStart;
+    if (panelDragCurrent < 0) panelDragCurrent = 0;
+    els.panel.style.transform = `translateY(${panelDragCurrent}px)`;
+  }
+  function onPanelDragEnd() {
+    if (!isDraggingPanel) return;
+    isDraggingPanel = false;
+    els.panel.classList.remove('dragging');
+    if (panelDragCurrent > 80) closePanel();
+    els.panel.style.transform = '';
+    panelDragCurrent = 0;
+  }
+  panelHandle.addEventListener('touchstart', onPanelDragStart, { passive: true });
+  document.addEventListener('touchmove', onPanelDragMove, { passive: true });
+  document.addEventListener('touchend', onPanelDragEnd);
+
   function openPanel(title, contentFn) {
     els.panelHead.textContent = title;
     els.panelBody.innerHTML = '';
@@ -628,6 +842,7 @@
   }
   function closePanel() { els.panel.classList.remove('open'); }
 
+  /* ─── Panel builders ─── */
   function buildQueuePanel(body) {
     if (!state.queue.length) {
       body.innerHTML = '<p style="opacity:0.5;padding:20px 0;text-align:center;">No hay episodios en cola</p>';
@@ -639,15 +854,14 @@
       item.innerHTML = `
         <img src="${ep.coverUrl || state.coverUrl}" alt="">
         <div class="qi-info">
-          <div class="qi-title">${ep.title}</div>
-          <div class="qi-author">${ep.author || ''}</div>
+          <div class="qi-title">${escapeHtml(ep.title)}</div>
+          <div class="qi-author">${escapeHtml(ep.author || '')}</div>
         </div>
       `;
       item.addEventListener('click', () => { state.queueIndex = i; playQueueItem(i); });
       body.appendChild(item);
     });
   }
-
   function buildSpeedPanel(body) {
     const speeds = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3];
     speeds.forEach(s => {
@@ -658,10 +872,124 @@
         setRate(s);
         $$('.mp-speed-opt', body).forEach(o => o.classList.remove('active'));
         opt.classList.add('active');
-        updateSpeedBadge();
       });
       body.appendChild(opt);
     });
+  }
+  function buildTimerPanel(body) {
+    const options = [
+      { label: 'Desactivado', mins: 0 },
+      { label: '5 minutos', mins: 5 },
+      { label: '10 minutos', mins: 10 },
+      { label: '15 minutos', mins: 15 },
+      { label: '30 minutos', mins: 30 },
+      { label: '45 minutos', mins: 45 },
+      { label: '1 hora', mins: 60 },
+      { label: 'Fin del episodio', mins: -1 },
+    ];
+    const activeType = state.timerType;
+    options.forEach(opt => {
+      const elDiv = ce('div');
+      let isActive = false;
+      if (opt.mins === 0 && !state.timerEnd && state.timerType !== 'end') isActive = true;
+      else if (opt.mins === -1 && state.timerType === 'end') isActive = true;
+      else if (opt.mins > 0 && state.timerType === 'minutes' && state.timerEnd && Math.round((state.timerEnd - Date.now()) / 60000) === opt.mins) isActive = true;
+      elDiv.className = 'mp-timer-opt' + (isActive ? ' active' : '');
+      let extra = '';
+      if (opt.mins > 0 && state.timerType === 'minutes' && state.timerEnd) {
+        const remaining = Math.max(0, (state.timerEnd - Date.now()) / 1000);
+        extra = ` (${fmtLong(remaining)})`;
+      }
+      elDiv.innerHTML = `<span>${opt.label}${extra}</span><div class="check"></div>`;
+      elDiv.addEventListener('click', () => {
+        if (opt.mins === 0) { state.timerEnd = null; state.timerType = null; }
+        else if (opt.mins === -1) { state.timerEnd = null; state.timerType = 'end'; }
+        else { state.timerEnd = Date.now() + opt.mins * 60000; state.timerType = 'minutes'; }
+        closePanel();
+      });
+      body.appendChild(elDiv);
+    });
+  }
+  function buildSharePanel(body) {
+    // canonical URL: replace origin with https://media.baltaanay.org
+    let canonicalUrl = state.detailUrl ? (window.location.origin + state.detailUrl) : window.location.href;
+    canonicalUrl = canonicalUrl.replace(/^https?:\/\/[^\/]+/, 'https://media.baltaanay.org');
+    const shareData = [
+      { name: 'Copiar', icon: '📋', action: () => { navigator.clipboard.writeText(canonicalUrl).then(() => {}); } },
+      { name: 'WhatsApp', icon: '💬', action: () => window.open(`https://wa.me/?text=${encodeURIComponent(state.title + ' ' + canonicalUrl)}`) },
+      { name: 'Twitter', icon: '𝕏', action: () => window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(state.title)}&url=${encodeURIComponent(canonicalUrl)}`) },
+      { name: 'Facebook', icon: '📘', action: () => window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(canonicalUrl)}`) },
+      { name: 'Telegram', icon: '✈️', action: () => window.open(`https://t.me/share/url?url=${encodeURIComponent(canonicalUrl)}&text=${encodeURIComponent(state.title)}`) },
+      { name: 'Email', icon: '✉️', action: () => window.open(`mailto:?subject=${encodeURIComponent(state.title)}&body=${encodeURIComponent(canonicalUrl)}`) },
+    ];
+    if (navigator.share) {
+      shareData.unshift({
+        name: 'Compartir', icon: '📤',
+        action: () => navigator.share({ title: state.title, url: canonicalUrl }).catch(() => {}),
+      });
+    }
+    const grid = ce('div');
+    grid.className = 'mp-share-grid';
+    shareData.forEach(s => {
+      const item = ce('div');
+      item.className = 'mp-share-item';
+      item.innerHTML = `<button>${s.icon}</button><span>${s.name}</span>`;
+      $('button', item).addEventListener('click', () => { s.action(); closePanel(); });
+      grid.appendChild(item);
+    });
+    body.appendChild(grid);
+  }
+  function buildInfoPanel(body) {
+    body.innerHTML = `
+      <div class="mp-info-content">
+        <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;">
+          <img src="${state.coverInfo || state.coverUrl}" style="width:80px;height:80px;border-radius:8px;object-fit:cover;" alt="">
+          <div>
+            <div style="font-size:16px;font-weight:700;">${escapeHtml(state.title)}</div>
+            <div style="font-size:13px;opacity:0.6;margin-top:4px;">${escapeHtml(state.author)}</div>
+          </div>
+        </div>
+        <div style="white-space:pre-wrap;">${escapeHtml(state.text) || 'Sin descripción disponible.'}</div>
+        ${state.allowDownload ? `<div style="margin-top:16px;"><button class="mp-dl-btn"><span style="width:20px;height:20px;display:inline-block;">${icons.download}</span>Descargar</button></div>` : ''}
+      </div>
+    `;
+    const dlBtn = $('.mp-dl-btn', body);
+    if (dlBtn) {
+      dlBtn.addEventListener('click', () => {
+        const url = state.mode === 'video' && state.mediaVideo ? state.mediaVideo : state.mediaUrl;
+        const a = ce('a'); a.href = url; a.download = state.title; a.target = '_blank';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      });
+    }
+  }
+  function escapeHtml(str) { if (!str) return ''; return str.replace(/[&<>]/g, m => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;' }[m])); }
+
+  function playQueueItem(idx) {
+    if (idx < 0 || idx >= state.queue.length) return;
+    const ep = state.queue[idx];
+    state.queueIndex = idx;
+    loadEpisode(
+      ep.mediaUrl || '', ep.mediaVideo || '', ep.initialMode || 'audio',
+      ep.coverUrl || '', ep.coverInfo || '', ep.title || '',
+      ep.detailUrl || '', ep.author || '', state.queue,
+      ep.text || '', ep.subtitlesUrl || '', ep.bgColor || '#1a1a2e',
+      ep.allowDownload || false
+    );
+    closePanel();
+  }
+  function playNext() {
+    if (!state.queue.length) return;
+    let next = state.queueIndex + 1;
+    if (state.shuffle) next = Math.floor(Math.random() * state.queue.length);
+    if (next >= state.queue.length) { if (state.repeat === 2) next = 0; else return; }
+    playQueueItem(next);
+  }
+  function playPrev() {
+    if (activeMedia().currentTime > 3) { activeMedia().currentTime = 0; return; }
+    if (!state.queue.length) return;
+    let prev = state.queueIndex - 1;
+    if (prev < 0) prev = state.repeat === 2 ? state.queue.length - 1 : 0;
+    playQueueItem(prev);
   }
 
   function updateSpeedBadge() {
@@ -677,277 +1005,17 @@
     }
   }
 
-  function buildTimerPanel(body) {
-    const options = [
-      { label: 'Desactivado', mins: 0 },
-      { label: '5 minutos', mins: 5 },
-      { label: '10 minutos', mins: 10 },
-      { label: '15 minutos', mins: 15 },
-      { label: '30 minutos', mins: 30 },
-      { label: '45 minutos', mins: 45 },
-      { label: '1 hora', mins: 60 },
-      { label: 'Fin del episodio', mins: -1 },
-    ];
-    const activeType = state.timerType;
-    options.forEach(opt => {
-      const el = ce('div');
-      const isActive = (opt.mins === 0 && !state.timerEnd && !state.timerType) ||
-                        (opt.mins === -1 && state.timerType === 'end') ||
-                        (opt.mins > 0 && state.timerType === opt.mins);
-      el.className = 'mp-timer-opt' + (isActive ? ' active' : '');
-      el.innerHTML = `<span>${opt.label}${state.timerEnd && opt.mins > 0 && state.timerType === opt.mins ? ' (' + fmt(Math.max(0, (state.timerEnd - Date.now()) / 1000)) + ')' : ''}</span><div class="check"></div>`;
-      el.addEventListener('click', () => {
-        if (opt.mins === 0) { state.timerEnd = null; state.timerType = null; }
-        else if (opt.mins === -1) { state.timerEnd = null; state.timerType = 'end'; }
-        else { state.timerEnd = Date.now() + opt.mins * 60000; state.timerType = opt.mins; }
-        closePanel();
-      });
-      body.appendChild(el);
-    });
-  }
-
-  function buildSharePanel(body) {
-    const url = state.detailUrl ? (location.origin + state.detailUrl) : location.href;
-    const shareData = [
-      { name: 'Copiar', icon: '📋', action: () => { navigator.clipboard.writeText(url).then(() => {}); } },
-      { name: 'WhatsApp', icon: '💬', action: () => window.open(`https://wa.me/?text=${encodeURIComponent(state.title + ' ' + url)}`) },
-      { name: 'Twitter', icon: '𝕏', action: () => window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(state.title)}&url=${encodeURIComponent(url)}`) },
-      { name: 'Facebook', icon: '📘', action: () => window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`) },
-      { name: 'Telegram', icon: '✈️', action: () => window.open(`https://t.me/share/url?url=${encodeURIComponent(url)}&text=${encodeURIComponent(state.title)}`) },
-      { name: 'Email', icon: '✉️', action: () => window.open(`mailto:?subject=${encodeURIComponent(state.title)}&body=${encodeURIComponent(url)}`) },
-    ];
-    // native share first if available
-    if (navigator.share) {
-      shareData.unshift({
-        name: 'Compartir',
-        icon: '📤',
-        action: () => navigator.share({ title: state.title, url }).catch(() => {}),
-      });
-    }
-    const grid = ce('div');
-    grid.className = 'mp-share-grid';
-    shareData.forEach(s => {
-      const item = ce('div');
-      item.className = 'mp-share-item';
-      item.innerHTML = `<button style="background:rgba(255,255,255,0.1);font-size:22px;">${s.icon}</button><span>${s.name}</span>`;
-      $('button', item).addEventListener('click', () => { s.action(); closePanel(); });
-      grid.appendChild(item);
-    });
-    body.appendChild(grid);
-  }
-
-  function buildInfoPanel(body) {
-    body.innerHTML = `
-      <div class="mp-info-content">
-        <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;">
-          <img src="${state.coverInfo || state.coverUrl}" style="width:80px;height:80px;border-radius:8px;object-fit:cover;" alt="">
-          <div>
-            <div style="font-size:16px;font-weight:700;">${state.title}</div>
-            <div style="font-size:13px;opacity:0.6;margin-top:4px;">${state.author}</div>
-          </div>
-        </div>
-        <div style="white-space:pre-wrap;">${state.text || 'Sin descripción disponible.'}</div>
-        ${state.allowDownload ? `<div style="margin-top:16px;"><button class="mp-dl-btn" style="display:flex;align-items:center;gap:8px;padding:12px 20px;background:rgba(255,255,255,0.1);border-radius:8px;font-size:14px;font-weight:600;width:100%;justify-content:center;"><span style="width:20px;height:20px;">${icons.download}</span>Descargar</button></div>` : ''}
-      </div>
-    `;
-    const dlBtn = $('.mp-dl-btn', body);
-    if (dlBtn) {
-      dlBtn.addEventListener('click', () => {
-        const url = state.mode === 'video' && state.mediaVideo ? state.mediaVideo : state.mediaUrl;
-        const a = ce('a'); a.href = url; a.download = state.title; a.target = '_blank';
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      });
-    }
-  }
-
-  /* ─── Queue playback ─── */
-  function playQueueItem(idx) {
-    if (idx < 0 || idx >= state.queue.length) return;
-    const ep = state.queue[idx];
-    state.queueIndex = idx;
-    loadEpisode(
-      ep.mediaUrl || '', ep.mediaVideo || '', ep.initialMode || 'audio',
-      ep.coverUrl || '', ep.coverInfo || '', ep.title || '',
-      ep.detailUrl || '', ep.author || '', state.queue,
-      ep.text || '', ep.subtitlesUrl || '', ep.bgColor || '#1a1a2e',
-      ep.allowDownload || false
-    );
-    closePanel();
-  }
-
-  function playNext() {
-    if (!state.queue.length) return;
-    let next = state.queueIndex + 1;
-    if (state.shuffle) next = Math.floor(Math.random() * state.queue.length);
-    if (next >= state.queue.length) {
-      if (state.repeat === 2) next = 0; else return;
-    }
-    playQueueItem(next);
-  }
-  function playPrev() {
-    if (activeMedia().currentTime > 3) { activeMedia().currentTime = 0; return; }
-    if (!state.queue.length) return;
-    let prev = state.queueIndex - 1;
-    if (prev < 0) prev = state.repeat === 2 ? state.queue.length - 1 : 0;
-    playQueueItem(prev);
-  }
-
-  /* ─── Gestures ─── */
-  function setupGestures() {
-    let startY = 0, startX = 0, dy = 0, isDragging = false, target = null;
-
-    // Expand gesture on mini player (swipe up)
-    mini.addEventListener('touchstart', (e) => {
-      startY = e.touches[0].clientY;
-      startX = e.touches[0].clientX;
-    }, { passive: true });
-    mini.addEventListener('touchend', (e) => {
-      const endY = e.changedTouches[0].clientY;
-      const endX = e.changedTouches[0].clientX;
-      const diffY = startY - endY;
-      const diffX = Math.abs(endX - startX);
-      if (diffY > 40 && diffX < 80) expand();
-    }, { passive: true });
-    // Tap on mini to expand
-    mini.addEventListener('click', (e) => {
-      if (e.target.closest('.mp-mini-btn')) return;
-      expand();
-    });
-
-    // Collapse gesture on expanded (swipe down from handle/header)
-    const dragTarget = els.handle;
-    dragTarget.addEventListener('touchstart', (e) => {
-      startY = e.touches[0].clientY;
-      isDragging = true;
-      dy = 0;
-      exp.classList.add('dragging');
-    }, { passive: true });
-
-    document.addEventListener('touchmove', (e) => {
-      if (!isDragging) return;
-      dy = e.touches[0].clientY - startY;
-      if (dy < 0) dy = 0;
-      exp.style.transform = `translateY(${dy}px)`;
-    }, { passive: true });
-
-    document.addEventListener('touchend', () => {
-      if (!isDragging) return;
-      isDragging = false;
-      exp.classList.remove('dragging');
-      if (dy > 120) {
-        collapse();
-        exp.style.transform = '';
-      } else {
-        exp.style.transform = '';
-      }
-      dy = 0;
-    }, { passive: true });
-
-    // Panel drag-to-close
-    let panelDragging = false, panelDy = 0, panelStartY = 0;
-    const ph = $('.mp-panel-handle', exp);
-    ph.addEventListener('touchstart', (e) => {
-      panelStartY = e.touches[0].clientY;
-      panelDragging = true;
-      panelDy = 0;
-      els.panel.classList.add('dragging');
-    }, { passive: true });
-
-    document.addEventListener('touchmove', (e) => {
-      if (!panelDragging) return;
-      panelDy = e.touches[0].clientY - panelStartY;
-      if (panelDy < 0) panelDy = 0;
-      els.panel.style.transform = `translateY(${panelDy}px)`;
-    }, { passive: true });
-
-    document.addEventListener('touchend', () => {
-      if (!panelDragging) return;
-      panelDragging = false;
-      els.panel.classList.remove('dragging');
-      if (panelDy > 80) {
-        closePanel();
-      }
-      els.panel.style.transform = '';
-      panelDy = 0;
-    }, { passive: true });
-
-    // Swipe up from bottom of expanded → open queue panel
-    let expBottomStartY = 0;
-    const ctrlArea = $('.mp-controls-area', exp);
-    ctrlArea.addEventListener('touchstart', (e) => {
-      expBottomStartY = e.touches[0].clientY;
-    }, { passive: true });
-    ctrlArea.addEventListener('touchend', (e) => {
-      const diffY = expBottomStartY - e.changedTouches[0].clientY;
-      if (diffY > 60 && !els.panel.classList.contains('open')) {
-        openPanel('A continuación', buildQueuePanel);
-      }
-    }, { passive: true });
-  }
-
-  /* ─── Progress bar touch ─── */
-  function setupProgressTouch() {
-    let seeking = false;
-    const wrap = els.progressWrap;
-    const track = els.progressTrack;
-
-    function getPos(e) {
-      const rect = track.getBoundingClientRect();
-      const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
-      return clamp(x / rect.width, 0, 1);
-    }
-
-    wrap.addEventListener('touchstart', (e) => {
-      seeking = true;
-      wrap.classList.add('active');
-      const pct = getPos(e);
-      activeMedia().currentTime = pct * (state.duration || 0);
-    }, { passive: true });
-
-    document.addEventListener('touchmove', (e) => {
-      if (!seeking) return;
-      const pct = getPos(e);
-      els.progressFill.style.width = (pct * 100) + '%';
-      els.timeCur.textContent = fmt(pct * (state.duration || 0));
-    }, { passive: true });
-
-    document.addEventListener('touchend', (e) => {
-      if (!seeking) return;
-      seeking = false;
-      wrap.classList.remove('active');
-      const rect = track.getBoundingClientRect();
-      const x = e.changedTouches[0].clientX - rect.left;
-      const pct = clamp(x / rect.width, 0, 1);
-      activeMedia().currentTime = pct * (state.duration || 0);
-    }, { passive: true });
-  }
-
-  /* ─── Timer logic ─── */
-  function checkTimer() {
-    if (!state.timerEnd && state.timerType !== 'end') return;
-    if (state.timerType === 'end') return; // handled on 'ended'
-    if (Date.now() >= state.timerEnd) {
-      activeMedia().pause();
-      state.timerEnd = null;
-      state.timerType = null;
-    }
-  }
-
   /* ─── Event bindings ─── */
   function bindEvents() {
-    // Media events — bind both audio and video
     [audioEl, videoEl].forEach(m => {
       m.addEventListener('play', () => { state.isPlaying = true; updatePlayBtn(); });
       m.addEventListener('pause', () => { state.isPlaying = false; updatePlayBtn(); });
       m.addEventListener('timeupdate', () => {
         state.currentTime = m.currentTime;
         state.duration = m.duration || 0;
-        if (m === activeMedia()) { updateProgress(); updatePositionState(); checkTimer(); }
+        if (m === activeMedia()) { updateProgress(); }
       });
-      m.addEventListener('loadedmetadata', () => {
-        state.duration = m.duration || 0;
-        updateProgress();
-      });
+      m.addEventListener('loadedmetadata', () => { state.duration = m.duration || 0; updateProgress(); });
       m.addEventListener('ended', () => {
         if (state.timerType === 'end') {
           state.timerType = null;
@@ -959,7 +1027,6 @@
       });
     });
 
-    // Buttons
     els.btnPlay.addEventListener('click', togglePlay);
     els.miniPlay.addEventListener('click', (e) => { e.stopPropagation(); togglePlay(); });
     els.miniNext.addEventListener('click', (e) => { e.stopPropagation(); playNext(); });
@@ -969,42 +1036,46 @@
     els.btnFwd.addEventListener('click', () => seek(10));
     els.btnCollapse.addEventListener('click', collapse);
     els.panelClose.addEventListener('click', closePanel);
-
-    els.btnMode.addEventListener('click', () => {
-      switchMode(state.mode === 'video' ? 'audio' : 'video');
-    });
-
+    els.btnMode.addEventListener('click', () => { switchMode(state.mode === 'video' ? 'audio' : 'video'); });
     els.btnSubtitle.addEventListener('click', () => {
       state.subtitlesOn = !state.subtitlesOn;
       els.btnSubtitle.classList.toggle('active', state.subtitlesOn);
       updateMediaArea();
+      updateSubtitlesDisplay();
     });
-
     els.btnShuffle.addEventListener('click', () => {
       state.shuffle = !state.shuffle;
       els.btnShuffle.classList.toggle('active', state.shuffle);
-      els.btnShuffle.style.opacity = state.shuffle ? '1' : '0.5';
     });
-
     els.btnRepeat.addEventListener('click', () => {
       state.repeat = (state.repeat + 1) % 3;
-      els.btnRepeat.style.opacity = state.repeat ? '1' : '0.5';
-      if (state.repeat === 1) els.btnRepeat.innerHTML = icons.repeat.replace('</svg>', '<circle cx="12" cy="12" r="3" fill="currentColor"/></svg>');
+      if (state.repeat === 1) els.btnRepeat.innerHTML = icons.repeatOne;
       else els.btnRepeat.innerHTML = icons.repeat;
+      els.btnRepeat.style.opacity = state.repeat ? '1' : '0.5';
     });
-
     els.btnSpeed.addEventListener('click', () => openPanel('Velocidad', buildSpeedPanel));
     els.btnTimer.addEventListener('click', () => openPanel('Temporizador', buildTimerPanel));
     els.btnQueue.addEventListener('click', () => openPanel('A continuación', buildQueuePanel));
     els.btnShare.addEventListener('click', () => openPanel('Compartir', buildSharePanel));
     els.btnMore.addEventListener('click', () => openPanel('Información', buildInfoPanel));
+    els.btnFullscreen.addEventListener('click', showFullscreen);
 
-    setupGestures();
-    setupProgressTouch();
+    // Swipe up from bottom controls to open queue panel (existing gesture)
+    const ctrlArea = $('.mp-controls-area', exp);
+    let startY = 0;
+    ctrlArea.addEventListener('touchstart', (e) => { startY = e.touches[0].clientY; }, { passive: true });
+    ctrlArea.addEventListener('touchend', (e) => {
+      const diff = startY - e.changedTouches[0].clientY;
+      if (diff > 50 && !els.panel.classList.contains('open')) openPanel('A continuación', buildQueuePanel);
+    }, { passive: true });
   }
 
   /* ─── Load episode ─── */
   function loadEpisode(mediaUrl, mediaVideo, initialMode, coverUrl, coverInfo, title, detailUrl, author, queue, text, subtitlesUrl, bgColor, allowDownload) {
+    // reset timers
+    if (state.timerType === 'minutes') { state.timerEnd = null; state.timerType = null; }
+    if (state.timerType === 'end') state.timerType = null;
+
     state.mediaUrl = mediaUrl || '';
     state.mediaVideo = mediaVideo || '';
     state.coverUrl = coverUrl || '';
@@ -1020,21 +1091,15 @@
     state.subtitlesOn = false;
     state.currentCue = '';
 
-    // determine mode
     if (initialMode === 'video' && state.mediaVideo) state.mode = 'video';
     else if (state.mediaUrl) state.mode = 'audio';
     else if (state.mediaVideo) state.mode = 'video';
     else state.mode = 'audio';
 
-    // set sources
     if (state.mediaUrl) audioEl.src = state.mediaUrl;
     if (state.mediaVideo) videoEl.src = state.mediaVideo;
 
-    // subtitle button visibility
     els.btnSubtitle.style.display = state.subtitlesUrl ? '' : 'none';
-
-    // download
-    // queue index
     if (state.queue.length) {
       state.queueIndex = state.queue.findIndex(q => q.title === state.title);
       if (state.queueIndex === -1) state.queueIndex = 0;
@@ -1048,8 +1113,6 @@
     loadSubtitles(state.subtitlesUrl);
 
     mini.classList.remove('hidden');
-
-    // auto play
     activeMedia().play().catch(() => {});
     expand();
   }
@@ -1066,8 +1129,6 @@
     init();
     loadEpisode(mediaUrl, mediaVideo, initialMode, coverUrl, coverInfo, title, detailUrl, author, queue, text, subtitlesUrl, bgColor, allowDownload);
   };
-
-  // Expose collapse/expand
   window.mpCollapse = collapse;
   window.mpExpand = expand;
 })();
